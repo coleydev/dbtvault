@@ -113,9 +113,21 @@
 
 {%- endmacro -%}
 
-{%- macro redshift__hash(columns, alias, is_hashdiff) -%}
+{%- macro redshift__hash(columns, alias, is_hashdiff, columns_to_escape) -%}
+
+    {{ dbtvault.default__hash(columns=columns, alias=alias, is_hashdiff=is_hashdiff, columns_to_escape=columns_to_escape) }}
+
+{%- endmacro -%}
 
 
+{%- macro databricks__hash(columns, alias, is_hashdiff, columns_to_escape) -%}
+
+    {{ dbtvault.default__hash(columns=columns, alias=alias, is_hashdiff=is_hashdiff, columns_to_escape=columns_to_escape) }}
+
+{%- endmacro -%}
+
+
+{# 
 {%- set hash = var('hash', 'MD5') -%}
 {%- set concat_string = var('concat_string', '||') -%}
 {%- set null_placeholder_string = var('null_placeholder_string', '^^') -%}
@@ -200,12 +212,4 @@
     {%- endfor -%}
 
 {%- endif -%}
-
-{%- endmacro -%}
-
-
-{%- macro databricks__hash(columns, alias, is_hashdiff, columns_to_escape) -%}
-
-    {{ dbtvault.default__hash(columns=columns, alias=alias, is_hashdiff=is_hashdiff, columns_to_escape=columns_to_escape) }}
-
-{%- endmacro -%}
+ #}
