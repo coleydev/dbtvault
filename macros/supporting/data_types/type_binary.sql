@@ -25,6 +25,16 @@
     BYTEA
 {%- endmacro -%}
 
+{%- macro redshift__type_binary() -%}
+    {%- if var('hash', 'MD5') | lower == 'md5' -%}
+        VARBYTE(16)
+    {%- elif var('hash', 'MD5') | lower == 'sha' -%}
+        VARBYTE(32)
+    {%- else -%}
+        VARBYTE(16)
+    {%- endif -%}
+{%- endmacro -%}
+
 {%- macro databricks__type_binary() -%}
     STRING
 {%- endmacro -%}

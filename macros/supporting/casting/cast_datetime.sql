@@ -67,3 +67,11 @@
     {%- if alias %} AS {{ alias }} {%- endif %}
 
 {%- endmacro -%}
+
+{%- macro redshift__cast_datetime(column_str, as_string=false, alias=none, date_type=none) -%}
+
+    TO_TIMESTAMP({{ column_str }}, 'YYYY-MM-DD HH24:MI:SS.MS')
+
+    {%- if alias %} AS {{ alias }} {%- endif %}
+
+{%- endmacro -%}

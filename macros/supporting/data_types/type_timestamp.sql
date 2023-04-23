@@ -11,6 +11,10 @@
     TIMESTAMP_NTZ
 {%- endmacro -%}
 
+{%- macro redshift__type_timestamp() -%}
+    TIMESTAMPTZ
+{%- endmacro -%}
+
 {%- macro sqlserver__type_timestamp() -%}
     DATETIME2
 {%- endmacro -%}
