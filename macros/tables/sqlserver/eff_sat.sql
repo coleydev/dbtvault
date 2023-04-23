@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) Business Thinking Ltd. 2019-2023
+ * This software includes code developed by the dbtvault Team at Business Thinking Ltd. Trading as Datavault
+ */
+
 {%- macro sqlserver__eff_sat(src_pk, src_dfk, src_sfk, src_extra_columns, src_start_date, src_end_date, src_eff, src_ldts, src_source, source_model) -%}
 
 {%- set source_cols = dbtvault.expand_column_list(columns=[src_pk, src_dfk, src_sfk, src_extra_columns, src_start_date, src_end_date, src_eff, src_ldts, src_source]) -%}
@@ -134,7 +139,7 @@ new_closed_records AS (
         h.{{ src_ldts }},
         lo.{{ src_source }}
     FROM source_data AS h
-    LEFT JOIN Latest_open AS lo
+    LEFT JOIN latest_open AS lo
     ON lo.{{ src_pk }} = h.{{ src_pk }}
     LEFT JOIN latest_closed AS lc
     ON lc.{{ src_pk }} = h.{{ src_pk }}
