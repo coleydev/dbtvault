@@ -39,8 +39,13 @@
 
 {%- endmacro -%}
 
-{%- macro redshift__cast_binary(column_str, alias=none) -%}
+{%- macro redshift__cast_binary(column_str, alias=none, quote=true) -%}
 
-    TO_VARBYTE('{{ column_str }}', 'hex') {% if alias %} AS {{ alias }} {%- endif %}
+    {%- if quote -%}
+        TO_VARBYTE('{{ column_str }}', 'hex') 
+    {%- else -%}
+        TO_VARBYTE({{ column_str }}, 'hex') 
+    {%- endif -%}
+    {% if alias %} AS {{ alias }} {%- endif %}
 
 {%- endmacro -%}
