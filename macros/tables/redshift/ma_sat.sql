@@ -26,29 +26,34 @@
     {%- endif %}
 
     {# Select unique source records #}
+    {{dbt_utils.log_info(dbtvault.is_any_incremental())}}
+    -- NEW MAS
     WITH source_data AS (
         WITH internal_source_data AS (
             {%- if model.config.materialized == 'vault_insert_by_rank' %}
             SELECT
-                DISTINCT {{ dbtvault.prefix(
+                {{ dbtvault.prefix(
                     source_cols_with_rank,
                     's',
                     alias_target = 'source'
                 ) }}
             {%- else %}
             SELECT
-                DISTINCT {{ dbtvault.prefix(
+                {{ dbtvault.prefix(
                     source_cols,
                     's',
                     alias_target = 'source'
                 ) }}
-            {%- endif %}
-
-            {% if dbtvault.is_any_incremental() %},
-                DENSE_RANK() over (PARTITION BY {{ dbtvault.prefix([src_pk], 's') }}
-            ORDER BY
-                {{ dbtvault.prefix([src_hashdiff], 's', alias_target = 'source') }}, {{ dbtvault.prefix(cdk_cols, 's', alias_target = 'source') }}) AS source_count_internal
-            {% endif %}
+            {%- endif %},
+            ROW_NUMBER() OVER(
+                PARTITION BY
+                    {{ dbtvault.prefix([src_pk], 's') }},
+                    {{ dbtvault.prefix(cdk_cols, 's', alias_target = 'source') }},
+                    {{ dbtvault.prefix([src_hashdiff], 's', alias_target = 'source') }}
+                    ORDER BY 
+                    {{ dbtvault.prefix([src_ldts],'s') }}
+            ) as row_num
+               
             FROM
                 {{ ref(source_model) }} AS s
             WHERE
@@ -70,7 +75,8 @@
                     AND __PERIOD_FILTER__ {%- elif model.config.materialized == 'vault_insert_by_rank' %}
                     AND __RANK_FILTER__
                 {%- endif %}
-        ) {%- if model.config.materialized == 'vault_insert_by_rank' %}
+        )
+        {%- if model.config.materialized == 'vault_insert_by_rank' %}
         SELECT
             DISTINCT {{ dbtvault.prefix(
                 source_cols_with_rank,
@@ -85,103 +91,147 @@
                 alias_target = 'source'
             ) }}
         {%- endif %}
-        {% if dbtvault.is_any_incremental() %},
-        MAX(
-            isd.source_count_internal
-        ) over (PARTITION BY {{ dbtvault.prefix([src_pk], 'isd') }}) AS source_count
-        {% endif %}
+        
         FROM
             internal_source_data AS isd
-    ),
-    {# if any_incremental -#}
-    {% if dbtvault.is_any_incremental() %}
-        {# Select latest records from satellite, restricted to PKs in source data -#}
-        latest_records AS (
-            WITH inner_latest_records AS (
-                SELECT
-                    {{ dbtvault.prefix(
-                        cols_for_latest,
-                        'mas',
-                        alias_target = 'target'
-                    ) }},
-                    mas.latest_rank,
-                    DENSE_RANK() over (PARTITION BY {{ dbtvault.prefix([src_pk], 'mas') }}
-                ORDER BY
-                    {{ dbtvault.prefix([src_hashdiff], 'mas', alias_target = 'target') }}, {{ dbtvault.prefix(cdk_cols, 'mas') }} ASC) AS check_rank
-                FROM
-                    (
-                        SELECT
-                            {{ dbtvault.prefix(
-                                cols_for_latest,
-                                'inner_mas',
-                                alias_target = 'target'
-                            ) }},
-                            RANK() over (
-                                PARTITION BY {{ dbtvault.prefix(
-                                    [src_pk],
-                                    'inner_mas'
-                                ) }}
-                                ORDER BY
-                                    {{ dbtvault.prefix(
-                                        [src_ldts],
-                                        'inner_mas'
-                                    ) }} DESC
-                            ) AS latest_rank
-                        FROM
-                            {{ this }} AS inner_mas
-                            INNER JOIN (
-                                SELECT
-                                    DISTINCT {{ dbtvault.prefix(
-                                        [src_pk],
-                                        's'
-                                    ) }}
-                                FROM
-                                    source_data AS s
-                            ) AS spk
-                            ON {{ dbtvault.multikey(
-                                [src_pk],
-                                prefix = ['inner_mas', 'spk'],
-                                condition = '='
-                            ) }}
-                    ) AS mas
-            )
-            SELECT
-                *
-            FROM
-                inner_latest_records
             WHERE
-                latest_rank = 1
-        ),
-        {# Select summary details for each group of latest records -#}
-        latest_group_details AS (
+            isd.row_num = 1
+    ),
+    -- Now get existing satellite records.
+{% if dbtvault.is_any_incremental() %}
+    sat_data AS (
+        WITH internal_sat_data AS (
+            {%- if model.config.materialized == 'vault_insert_by_rank' %}
             SELECT
                 {{ dbtvault.prefix(
-                    [src_pk],
-                    'lr'
-                ) }},
-                {{ dbtvault.prefix(
-                    [src_ldts],
-                    'lr'
-                ) }},
-                MAX(
-                    lr.check_rank
-                ) AS latest_count
-            FROM
-                latest_records AS lr
-            GROUP BY
-                {{ dbtvault.prefix(
-                    [src_pk],
-                    'lr'
-                ) }},
-                {{ dbtvault.prefix(
-                    [src_ldts],
-                    'lr'
+                    source_cols_with_rank,
+                    'i_mas',
+                    alias_target = 'target'
                 ) }}
-        ),
-        {# endif any_incremental -#}
-    {%- endif %}
+            {%- else %}
+            SELECT
+                {{ dbtvault.prefix(
+                    source_cols,
+                    'i_mas',
+                    alias_target = 'target'
+                ) }}
+            {%- endif %},
+            ROW_NUMBER() OVER(
+                PARTITION BY
+                    {{ dbtvault.prefix([src_pk], 'i_mas') }},
+                    {{ dbtvault.prefix(cdk_cols, 'i_mas', alias_target = 'target') }},
+                    i_mas.hashdiff
+                    ORDER BY 
+                    {{ dbtvault.prefix([src_ldts],'i_mas') }}
+            ) as row_num
+               
 
-    {# Select groups of source records where at least one member does not appear in a group of latest records -#}
+            FROM
+                {{ this }} AS i_mas
+            WHERE
+                {{ dbtvault.multikey(
+                    [src_pk],
+                    prefix = 'i_mas',
+                    condition = 'IS NOT NULL'
+                ) }}
+
+                {%- for child_key in cdk_cols %}
+                    AND {{ dbtvault.multikey(
+                        child_key,
+                        prefix = 'i_mas',
+                        condition = 'IS NOT NULL'
+                    ) }}
+                {%- endfor %}
+
+                {%- if model.config.materialized == 'vault_insert_by_period' %}
+                    AND __PERIOD_FILTER__
+                {%- elif model.config.materialized == 'vault_insert_by_rank' %}
+                    AND __RANK_FILTER__
+                {%- endif %}
+        )
+        {%- if model.config.materialized == 'vault_insert_by_rank' %}
+        SELECT
+            DISTINCT {{ dbtvault.prefix(
+                source_cols_with_rank,
+                'mas',
+                alias_target = 'target'
+            ) }}
+        {%- else %}
+        SELECT
+            DISTINCT {{ dbtvault.prefix(
+                source_cols,
+                'mas',
+                alias_target = 'target'
+            ) }}
+        {%- endif %}
+            , 1 AS src_check
+        FROM
+            internal_sat_data AS mas
+
+            WHERE
+            mas.row_num = 1
+
+    ),
+    {# Join records based on hashdiff, pk, cdk -#}
+    joined_records AS (
+        select
+        {%- if model.config.materialized == 'vault_insert_by_rank' %}
+             {{ dbtvault.prefix(
+                source_cols_with_rank,
+                's',
+                alias_target = 'source'
+            ) }}
+        {%- else %}
+         {{ dbtvault.prefix(
+                source_cols,
+                's',
+                alias_target = 'source'
+            ) }}
+        {%- endif %}
+            ,n.src_check
+            FROM
+            source_data s
+            left join sat_data n
+            ON {{ dbtvault.multikey(
+                    src_pk,
+                    prefix = ['s', 'n'],
+                    condition = '='
+                ) }}
+                AND  {{dbtvault.prefix([src_hashdiff], 's')}} = n.hashdiff
+                AND {{ dbtvault.multikey(
+                    cdk_cols,
+                    prefix = ['s', 'n'],
+                    condition = '='
+                ) }}
+            
+    ),
+    {% endif %}
+    records_to_insert AS (
+        SELECT DISTINCT
+        {%- if model.config.materialized == 'vault_insert_by_rank' %}
+             {{ dbtvault.alias_all(
+                source_cols_with_rank,
+                'j'
+            ) }}
+        {%- else %}
+         {{ dbtvault.alias_all(
+                source_cols,
+                'j'
+            ) }}
+        {%- endif %}
+        {% if dbtvault.is_any_incremental() %}
+        FROM joined_records j
+        WHERE j.src_check Is NULL
+        {% else %}
+        FROM source_data j
+        {% endif %}
+    )
+SELECT
+    *
+FROM
+    records_to_insert
+{%- endmacro -%}
+{# 
     {% if dbtvault.is_any_incremental() %}
     active_records AS (
         SELECT
@@ -268,9 +318,4 @@
                 ) }}
                 {# endif any_incremental -#}
             {%- endif %}
-    )
-SELECT
-    *
-FROM
-    records_to_insert
-{%- endmacro -%}
+    ) #}
