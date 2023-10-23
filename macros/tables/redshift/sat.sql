@@ -26,23 +26,26 @@ WITH source_data AS (
 ),
 
 {%- if dbtvault.is_any_incremental() %}
-
-latest_records AS (
-    SELECT {{ dbtvault.prefix(rank_cols, 'a', alias_target='target') }}
-    FROM (
-        SELECT {{ dbtvault.prefix(rank_cols, 'current_records', alias_target='target') }},
-            RANK() OVER (
-                PARTITION BY {{ dbtvault.prefix([src_pk], 'current_records') }}
+existing_records as (
+    SELECT {{ dbtvault.prefix(rank_cols, 'current_records', alias_target='target') }},
+            ROW_NUMBER() OVER (
+                PARTITION BY 
+                {{ dbtvault.prefix([src_pk], 'current_records') }},
+                {{ dbtvault.prefix([src_hashdiff], 'current_records') }}
                 ORDER BY {{ dbtvault.prefix([src_ldts], 'current_records') }} DESC
-            ) AS rank
+            ) AS row_num
         FROM {{ this }} AS current_records
             JOIN (
                 SELECT DISTINCT {{ dbtvault.prefix([src_pk], 'source_data') }}
                 FROM source_data
             ) AS source_records
                 ON {{ dbtvault.multikey(src_pk, prefix=['current_records','source_records'], condition='=') }}
-    ) AS a
-    WHERE a.rank = 1
+),
+latest_records AS (
+    SELECT {{ dbtvault.prefix(rank_cols, 'a', alias_target='target') }},
+    1 as src_check
+    FROM existing_records AS a
+    WHERE a.row_num = 1
 ),
 
 {%- endif %}
@@ -52,9 +55,12 @@ records_to_insert AS (
     FROM source_data AS stage
     {%- if dbtvault.is_any_incremental() %}
         LEFT JOIN latest_records
-            ON {{ dbtvault.multikey(src_pk, prefix=['latest_records','stage'], condition='=') }}
-            WHERE {{ dbtvault.prefix([src_hashdiff], 'latest_records', alias_target='target') }} != {{ dbtvault.prefix([src_hashdiff], 'stage') }}
-                OR {{ dbtvault.prefix([src_hashdiff], 'latest_records', alias_target='target') }} IS NULL
+        ON 
+        {{ dbtvault.multikey(src_pk, prefix=['latest_records','stage'], condition='=') }}
+        and 
+        {{ dbtvault.multikey(src_hashdiff, prefix=['latest_records','stage'], condition='=') }}
+        WHERE latest_records.src_check IS NULL
+            
     {%- endif %}
 )
 
