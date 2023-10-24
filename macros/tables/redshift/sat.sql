@@ -58,7 +58,7 @@ records_to_insert AS (
         ON 
         {{ dbtvault.multikey(src_pk, prefix=['latest_records','stage'], condition='=') }}
         and 
-        latest_records.hashdiff = stage.hashdiff 
+        latest_records.hashdiff =   {{ dbtvault.prefix([src_hashdiff], 'stage') }} 
         WHERE latest_records.src_check IS NULL
             
     {%- endif %}
