@@ -31,7 +31,7 @@ existing_records as (
             ROW_NUMBER() OVER (
                 PARTITION BY 
                 {{ dbtvault.prefix([src_pk], 'current_records') }},
-                {{ dbtvault.prefix([src_hashdiff], 'current_records') }}
+                current_records.hashdiff
                 ORDER BY {{ dbtvault.prefix([src_ldts], 'current_records') }} DESC
             ) AS row_num
         FROM {{ this }} AS current_records
@@ -58,7 +58,7 @@ records_to_insert AS (
         ON 
         {{ dbtvault.multikey(src_pk, prefix=['latest_records','stage'], condition='=') }}
         and 
-        {{ dbtvault.multikey(src_hashdiff, prefix=['latest_records','stage'], condition='=') }}
+        latest_records.hashdiff = stage.hashdiff 
         WHERE latest_records.src_check IS NULL
             
     {%- endif %}
