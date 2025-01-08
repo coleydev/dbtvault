@@ -51,7 +51,7 @@
                     {{ dbtvault.prefix(cdk_cols, 's', alias_target = 'source') }},
                     {{ dbtvault.prefix([src_hashdiff], 's', alias_target = 'source') }}
                     ORDER BY 
-                    {{ dbtvault.prefix([src_ldts],'s') }}
+                    {{ dbtvault.prefix([src_ldts],'s') }} desc
             ) as row_num
                
             FROM
