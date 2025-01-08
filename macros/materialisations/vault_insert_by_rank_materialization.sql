@@ -1,6 +1,6 @@
 {% materialization vault_insert_by_rank, default -%}
 
-    {% if target.type == "postgres" and execute %}
+    {% if (target.type == "postgres" or target.type == 'redshift') and execute %}
         {{ exceptions.raise_compiler_error("The vault_insert_by_rank materialisation is currently unavailable on Postgres.") }}
     {% endif %}
 

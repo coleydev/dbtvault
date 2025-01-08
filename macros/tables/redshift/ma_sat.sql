@@ -122,7 +122,7 @@
                     {{ dbtvault.prefix(cdk_cols, 'i_mas', alias_target = 'target') }},
                     i_mas.hashdiff
                     ORDER BY 
-                    {{ dbtvault.prefix([src_ldts],'i_mas') }}
+                    {{ dbtvault.prefix([src_ldts],'i_mas') }} desc
             ) as row_num
                
 
